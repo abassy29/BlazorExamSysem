@@ -1,0 +1,239 @@
+@page "/studentArea"
+@using ExaminationSystem.Data.Models
+@using ExaminationSystem.Data
+@using Microsoft.EntityFrameworkCore
+@inject ExaminationSystem.Data.ApplicationDbContext DbContext
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager NavigationManager
+
+<style>
+    .sa-wrapper {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 2rem 1rem 4rem;
+        font-family: 'Segoe UI', sans-serif;
+    }
+
+    .sa-header {
+        border-left: 4px solid #4f46e5;
+        padding-left: 1rem;
+        margin-bottom: 2rem;
+    }
+
+        .sa-header h3 {
+            font-size: 1.6rem;
+            font-weight: 700;
+            color: #1e1b4b;
+            margin: 0;
+        }
+
+    .sa-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+        gap: 1rem;
+    }
+
+    .sa-card {
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 14px;
+        padding: 1.25rem 1.5rem;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+        transition: box-shadow 0.2s;
+    }
+
+        .sa-card:hover {
+            box-shadow: 0 4px 16px rgba(79,70,229,0.08);
+        }
+
+    .sa-course-name {
+        font-size: 1rem;
+        font-weight: 700;
+        color: #1e1b4b;
+        margin: 0;
+    }
+
+    .sa-instructor {
+        font-size: 0.8rem;
+        color: #9ca3af;
+        margin: 0 0 0.5rem;
+    }
+
+    .sa-no-exam {
+        font-size: 0.8rem;
+        color: #9ca3af;
+        margin-top: auto;
+    }
+
+    .sa-grade {
+        display: inline-block;
+        margin-top: auto;
+        background: #d1fae5;
+        color: #065f46;
+        border: 1px solid #6ee7b7;
+        border-radius: 7px;
+        padding: 0.35rem 0.85rem;
+        font-size: 0.85rem;
+        font-weight: 700;
+    }
+
+    .sa-btn {
+        margin-top: auto;
+        background: #4f46e5;
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        padding: 0.55rem 1.25rem;
+        font-size: 0.875rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.15s, transform 0.1s;
+        align-self: flex-start;
+    }
+
+        .sa-btn:hover {
+            background: #4338ca;
+            transform: translateY(-1px);
+        }
+
+    .sa-alert-warn {
+        padding: 0.75rem 1rem;
+        border-radius: 10px;
+        background: #fffbeb;
+        border: 1px solid #fde68a;
+        color: #92400e;
+        font-size: 0.9rem;
+    }
+
+    .sa-alert-info {
+        padding: 0.75rem 1rem;
+        border-radius: 10px;
+        background: #f0f9ff;
+        border: 1px solid #bae6fd;
+        color: #0369a1;
+        font-size: 0.9rem;
+    }
+</style>
+
+<div class="sa-wrapper">
+    <div class="sa-header">
+        <h3>All Exams</h3>
+    </div>
+
+    @if (!IsAuthenticated)
+    {
+        <div class="sa-alert-warn">Please sign in to see your courses.</div>
+    }
+    else if (CourseCards == null || !CourseCards.Any())
+    {
+        <div class="sa-alert-info">No courses found.</div>
+    }
+    else
+    {
+        <div class="sa-grid">
+            @foreach (var card in CourseCards)
+            {
+                @foreach (var entry in card.ExamEntries)
+                {
+                    <div class="sa-card">
+                        <p class="sa-course-name">@card.Course.CourseName</p>
+                        <p class="sa-instructor">@GetInstructorName(card.Course.Instructor)</p>
+
+                        @if (entry.StudentResult != null)
+                        {
+                            <span class="sa-grade">Score: @entry.StudentResult.grade.ToString("F1")%</span>
+                        }
+                        else
+                        {
+                            <button class="sa-btn" @onclick="() => StartExam(entry.Exam.Id)">Start Exam</button>
+                        }
+                    </div>
+                }
+
+                @if (!card.ExamEntries.Any())
+                {
+                    <div class="sa-card">
+                        <p class="sa-course-name">@card.Course.CourseName</p>
+                        <p class="sa-instructor">@GetInstructorName(card.Course.Instructor)</p>
+                        <span class="sa-no-exam">No exam available yet.</span>
+                    </div>
+                }
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private bool IsAuthenticated;
+    private List<CourseCard> CourseCards { get; set; } = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        IsAuthenticated = false;
+
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        if (user?.Identity is null || !user.Identity.IsAuthenticated)
+        {
+            IsAuthenticated = false;
+            return;
+        }
+
+        IsAuthenticated = true;
+
+        var idClaim = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(idClaim, out var userId))
+            return;
+
+        var courses = await DbContext.Courses
+            .Include(c => c.Instructor)
+            .Include(c => c.Exams)
+                .ThenInclude(e => e.StdExams)
+            .OrderBy(c => c.CourseName)
+            .ToListAsync();
+
+        CourseCards = courses.Select(c =>
+        {
+            var examEntries = c.Exams.Select(e => new ExamEntry
+            {
+                Exam = e,
+                StudentResult = e.StdExams.FirstOrDefault(s => s.StdId == userId)
+            }).ToList();
+
+            return new CourseCard
+            {
+                Course = c,
+                ExamEntries = examEntries
+            };
+        }).ToList();
+    }
+
+    private string GetInstructorName(ApplicationUser? user)
+    {
+        if (user == null) return "Unknown";
+        var name = string.IsNullOrWhiteSpace(user.FName) && string.IsNullOrWhiteSpace(user.LName)
+            ? user.UserName?.Split('@')[0]
+            : ($"{user.FName} {user.LName}").Trim();
+        return string.IsNullOrWhiteSpace(name) ? "Unknown" : name;
+    }
+
+    private void StartExam(Guid examId)
+    {
+        NavigationManager.NavigateTo($"/takeExam/{examId}");
+    }
+
+    private class ExamEntry
+    {
+        public Exam Exam { get; set; } = default!;
+        public StdExam? StudentResult { get; set; }
+    }
+
+    private class CourseCard
+    {
+        public Course Course { get; set; } = default!;
+        public List<ExamEntry> ExamEntries { get; set; } = new();
+    }
+}

@@ -1,0 +1,391 @@
+@page "/createExamQuestions/{ExamId:guid}"
+@using ExaminationSystem.Data.Models
+@using ExaminationSystem.Data
+@using Microsoft.EntityFrameworkCore
+@using System.ComponentModel.DataAnnotations
+@using System.Linq
+@using Microsoft.EntityFrameworkCore.Metadata.Internal
+@inject ExaminationSystem.Data.ApplicationDbContext DbContext
+@inject NavigationManager NavigationManager
+
+<style>
+    .eq-wrapper {
+        max-width: 780px;
+        margin: 0 auto;
+        padding: 2rem 1rem 4rem;
+        font-family: 'Segoe UI', sans-serif;
+    }
+
+    .eq-header {
+        margin-bottom: 2rem;
+        border-left: 4px solid #4f46e5;
+        padding-left: 1rem;
+    }
+
+        .eq-header h3 {
+            font-size: 1.6rem;
+            font-weight: 700;
+            color: #1e1b4b;
+            margin: 0 0 0.25rem;
+        }
+
+        .eq-header p {
+            color: #6b7280;
+            font-size: 0.9rem;
+            margin: 0;
+        }
+
+    .eq-card {
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin-bottom: 1.25rem;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+        transition: box-shadow 0.2s;
+    }
+
+        .eq-card:hover {
+            box-shadow: 0 4px 16px rgba(79, 70, 229, 0.08);
+        }
+
+    .eq-card-header {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin-bottom: 1rem;
+    }
+
+    .eq-q-badge {
+        background: #4f46e5;
+        color: #fff;
+        font-size: 0.75rem;
+        font-weight: 700;
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+    }
+
+    .eq-card-header span {
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: #374151;
+    }
+
+    .eq-label {
+        font-size: 0.78rem;
+        font-weight: 600;
+        color: #6b7280;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 0.35rem;
+        display: block;
+    }
+
+    .eq-input, .eq-textarea, .eq-select {
+        width: 100%;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        padding: 0.5rem 0.75rem;
+        font-size: 0.9rem;
+        color: #111827;
+        background: #f9fafb;
+        transition: border-color 0.15s, box-shadow 0.15s;
+        box-sizing: border-box;
+    }
+
+    .eq-textarea {
+        resize: vertical;
+        min-height: 70px;
+    }
+
+        .eq-input:focus, .eq-textarea:focus, .eq-select:focus {
+            outline: none;
+            border-color: #4f46e5;
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+            background: #fff;
+        }
+
+    .eq-answers-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.75rem;
+        margin-bottom: 0.75rem;
+    }
+
+    .eq-answer-item {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .eq-answer-letter {
+        background: #f3f4f6;
+        border: 1px solid #e5e7eb;
+        border-radius: 6px;
+        width: 28px;
+        height: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.75rem;
+        font-weight: 700;
+        color: #4f46e5;
+        flex-shrink: 0;
+    }
+
+    .eq-correct-row {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        background: #f5f3ff;
+        border: 1px solid #ddd6fe;
+        border-radius: 8px;
+        padding: 0.6rem 0.85rem;
+        margin-top: 0.5rem;
+    }
+
+        .eq-correct-row label {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: #4f46e5;
+            white-space: nowrap;
+        }
+
+        .eq-correct-row select {
+            border: 1px solid #c4b5fd;
+            border-radius: 6px;
+            padding: 0.3rem 0.6rem;
+            font-size: 0.85rem;
+            color: #1e1b4b;
+            background: #fff;
+            font-weight: 600;
+        }
+
+    .eq-divider {
+        border: none;
+        border-top: 1px solid #f3f4f6;
+        margin: 1rem 0 0.75rem;
+    }
+
+    .eq-footer {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        margin-top: 1.5rem;
+    }
+
+    .eq-btn-save {
+        background: #4f46e5;
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        padding: 0.65rem 2rem;
+        font-size: 0.95rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.15s, transform 0.1s;
+    }
+
+        .eq-btn-save:hover:not(:disabled) {
+            background: #4338ca;
+            transform: translateY(-1px);
+        }
+
+        .eq-btn-save:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+    .eq-message {
+        margin-top: 1rem;
+        padding: 0.65rem 1rem;
+        border-radius: 8px;
+        font-size: 0.875rem;
+        background: #eff6ff;
+        border: 1px solid #bfdbfe;
+        color: #1d4ed8;
+    }
+</style>
+
+<div class="eq-wrapper">
+
+    @if (Exam == null)
+    {
+        <div class="alert alert-warning">Loading exam...</div>
+    }
+    else
+    {
+        <div class="eq-header">
+            <h3>Add 5 Questions</h3>
+            <p>Course: <strong>@Exam.Course?.CourseName</strong></p>
+        </div>
+
+        <EditForm Model="QuestionsModel" OnValidSubmit="HandleValidSubmit">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+
+            @for (int i = 0; i < QuestionsModel.Count; i++)
+            {
+                var q = QuestionsModel[i];
+                var num = i + 1;
+                <div class="eq-card">
+                    <div class="eq-card-header">
+                        <div class="eq-q-badge">@num</div>
+                        <span>Question @num</span>
+                    </div>
+
+                    <div class="mb-2">
+                        <label class="eq-label">Question text</label>
+                        <InputTextArea class="eq-textarea" @bind-Value="q.Quet" />
+                    </div>
+
+                    <hr class="eq-divider" />
+
+                    <label class="eq-label">Answer choices</label>
+                    <div class="eq-answers-grid">
+                        @{
+                            var letters = new[] { "A", "B", "C", "D" };
+                        }
+                        @for (int a = 0; a < 4; a++)
+                        {
+                            var ai = a;
+                            <div class="eq-answer-item">
+                                <div class="eq-answer-letter">@letters[ai]</div>
+                                <InputText class="eq-input" @bind-Value="q.Answers[ai].Ans" />
+                            </div>
+                        }
+                    </div>
+
+                    <div class="eq-correct-row">
+                        <label>Correct answer</label>
+                        <InputSelect class="eq-select" style="width:auto;" @bind-Value="q.ModelAns">
+                            @foreach (var v in Enum.GetValues(typeof(AnsLettersEnum)).Cast<AnsLettersEnum>())
+                            {
+                                <option value="@v">@v</option>
+                            }
+                        </InputSelect>
+                    </div>
+                </div>
+            }
+
+            <div class="eq-footer">
+                <button type="submit" class="eq-btn-save" disabled="@IsBusy">
+                    @(IsBusy ? "Saving..." : "Save Questions")
+                </button>
+            </div>
+
+            @if (!string.IsNullOrEmpty(Message))
+            {
+                <div class="eq-message">@Message</div>
+            }
+        </EditForm>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public Guid ExamId { get; set; }
+
+    private Exam? Exam;
+    private bool IsBusy;
+    private string? Message;
+
+    private List<Quetsion> QuestionsModel { get; set; } = new List<Quetsion>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        Exam = await DbContext.Exams.Include(e => e.Course).FirstOrDefaultAsync(e => e.Id == ExamId);
+
+        QuestionsModel = Enumerable.Range(0, 5).Select(_ =>
+        {
+            var q = new Quetsion
+            {
+                Id = Guid.NewGuid(),
+                ExamId = ExamId,
+                Quet = string.Empty,
+                ModelAns = AnsLettersEnum.A,
+            };
+
+            q.Answers = new List<Answer>
+            {
+                new Answer { Id = Guid.NewGuid(), Ans = string.Empty, AnsLetter = AnsLettersEnum.A, QuetsionId = q.Id, Quetsion = q },
+                new Answer { Id = Guid.NewGuid(), Ans = string.Empty, AnsLetter = AnsLettersEnum.B, QuetsionId = q.Id, Quetsion = q },
+                new Answer { Id = Guid.NewGuid(), Ans = string.Empty, AnsLetter = AnsLettersEnum.C, QuetsionId = q.Id, Quetsion = q },
+                new Answer { Id = Guid.NewGuid(), Ans = string.Empty, AnsLetter = AnsLettersEnum.D, QuetsionId = q.Id, Quetsion = q },
+            };
+
+            return q;
+        }).ToList();
+    }
+
+    private async Task HandleValidSubmit()
+    {
+        if (Exam == null)
+        {
+            Message = "Exam not found.";
+            return;
+        }
+
+        IsBusy = true;
+        Message = null;
+
+        try
+        {
+            var createdQuestions = new List<Quetsion>();
+
+            foreach (var q in QuestionsModel)
+            {
+                if (string.IsNullOrWhiteSpace(q.Quet)) continue;
+
+                if (q.Id == Guid.Empty) q.Id = Guid.NewGuid();
+                foreach (var a in q.Answers)
+                {
+                    if (a.Id == Guid.Empty) a.Id = Guid.NewGuid();
+                    a.QuetsionId = q.Id;
+                    a.Quetsion = q;
+                }
+
+                createdQuestions.Add(q);
+            }
+
+            if (!createdQuestions.Any())
+            {
+                Message = "No questions to save.";
+                return;
+            }
+
+            await DbContext.Quetsions.AddRangeAsync(createdQuestions);
+            await DbContext.SaveChangesAsync();
+            NavigationManager.NavigateTo("/");
+
+            Message = $"Saved {createdQuestions.Count} questions.";
+        }
+        catch (Exception ex)
+        {
+            Message = "Error saving questions: " + ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+            StateHasChanged();
+        }
+    }
+
+    private AnsLettersEnum ParseLetter(string? s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return AnsLettersEnum.A;
+        return s.ToUpper() switch
+        {
+            "A" => AnsLettersEnum.A,
+            "B" => AnsLettersEnum.B,
+            "C" => AnsLettersEnum.C,
+            "D" => AnsLettersEnum.D,
+            _ => AnsLettersEnum.A,
+        };
+    }
+}

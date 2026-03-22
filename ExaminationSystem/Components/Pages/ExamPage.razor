@@ -1,0 +1,352 @@
+@page "/takeExam/{ExamId:guid}"
+@using ExaminationSystem.Data.Models
+@using Microsoft.EntityFrameworkCore
+@using ExaminationSystem.Data
+@inject ExaminationSystem.Data.ApplicationDbContext DbContext
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JS
+
+<HeadContent>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <style>
+        body, .exam-wrapper {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .exam-wrapper h3 {
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: #1a1a2e;
+            margin-bottom: 1.25rem;
+            letter-spacing: -0.5px;
+        }
+
+        .exam-meta {
+            font-size: 0.95rem;
+            color: #555;
+            margin-bottom: 1.5rem;
+            line-height: 1.8;
+        }
+
+        .exam-meta strong {
+            color: #1a1a2e;
+            font-weight: 600;
+        }
+
+        .question-card {
+            border: 1px solid #e0e0e0;
+            border-radius: 12px;
+            padding: 1.25rem 1.5rem;
+            margin-bottom: 1.25rem;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+            background: #fff;
+        }
+
+        .question-text {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #1a1a2e;
+            margin-bottom: 0.85rem;
+        }
+
+        .form-check-label {
+            font-size: 0.95rem;
+            color: #333;
+            cursor: pointer;
+        }
+
+        .form-check-input {
+            cursor: pointer;
+        }
+
+        .modal-title {
+            font-size: 1.15rem;
+            font-weight: 700;
+            color: #1a1a2e;
+        }
+
+        .modal-body p {
+            font-size: 0.97rem;
+            color: #444;
+        }
+
+        .modal-body strong {
+            font-size: 1.1rem;
+            color: #1a1a2e;
+        }
+
+        .btn {
+            font-family: 'Inter', sans-serif;
+            font-weight: 500;
+            border-radius: 8px;
+        }
+
+        .alert {
+            font-size: 0.95rem;
+            border-radius: 10px;
+        }
+    </style>
+</HeadContent>
+
+<div class="exam-wrapper container py-4">
+
+    <h3>Exam</h3>
+
+    @if (!IsAuthenticated)
+    {
+        <div class="alert alert-warning">Please sign in to take the exam.</div>
+    }
+    else if (Exam == null)
+    {
+        <div class="alert alert-info">Loading exam...</div>
+    }
+    else if (AlreadyTaken)
+    {
+        <div class="card p-4" style="border-radius:12px; box-shadow:0 2px 10px rgba(0,0,0,0.08);">
+            <h5 class="card-title" style="font-weight:700;">@Exam.Course?.CourseName</h5>
+            <p class="card-text text-muted">You already took this exam.</p>
+            <div class="alert alert-success">Result: @TakenResult.grade.ToString("F1")%</div>
+            <button class="btn btn-secondary" @onclick='() => NavigationManager.NavigateTo("/studentArea", forceLoad: false)'>
+                ← Back to Student Area
+            </button>
+        </div>
+    }
+    else
+    {
+        <div class="exam-meta mb-3">
+            <strong>Course:</strong> @Exam.Course?.CourseName
+            <br />
+            <strong>Instructor:</strong> @GetInstructorName(Exam.Course?.Instructor)
+        </div>
+
+        <div>
+            @foreach (var q in Questions)
+            {
+                <div class="question-card">
+                    <p class="question-text">Q: @q.Quet</p>
+                    <div>
+                        @foreach (var a in q.Answers)
+                        {
+                            <div class="form-check mb-1">
+                                <input class="form-check-input" type="radio"
+                                       id="@($"{q.Id}-{a.AnsLetter}")"
+                                       name="@q.Id.ToString()"
+                                       value="@a.AnsLetter"
+                                       @onchange="(e) => OnRadioChanged(q.Id, e.Value?.ToString())"
+                                       checked="@(GetSelected(q.Id) == a.AnsLetter)" />
+                                <label class="form-check-label" for="@($"{q.Id}-{a.AnsLetter}")">
+                                    @a.Ans
+                                </label>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+
+            <div class="mt-3 d-flex gap-2">
+                <button type="button" class="btn btn-danger" @onclick="ShowFinishModal">
+                   Finish Exam
+                </button>
+             
+            </div>
+        </div>
+    }
+
+
+    @if (IsFinishModalVisible)
+    {
+        <div class="modal-backdrop fade show"></div>
+        <div class="modal d-block" tabindex="-1" role="dialog">
+            <div class="modal-dialog" role="document">
+                <div class="modal-content" style="border-radius:14px; overflow:hidden;">
+
+
+                    <div class="modal-header" style="border-bottom: 1px solid #eee;">
+                        <h5 class="modal-title">Submit Exam</h5>
+                    </div>
+
+                  <div>
+                        Are you sure you want sumbit exam..?
+                  </div>
+
+
+                    <div class="modal-footer" style="border-top: 1px solid #eee;">
+
+                        <button class="btn btn-primary px-4" @onclick="ConfirmSubmit" disabled="@IsBusy">
+                            @(IsBusy ? "Saving..." : "Submit")
+                        </button>
+
+                        <button class="btn btn-secondary" @onclick="CloseFinishModal">Cancel</button>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    }
+
+</div>
+
+@code {
+    [Parameter]
+    public Guid ExamId { get; set; }
+
+    private Exam? Exam;
+    private List<Quetsion> Questions { get; set; } = new();
+    private bool IsAuthenticated;
+    private Guid UserId;
+
+    private Dictionary<Guid, AnsLettersEnum?> SelectedAnswers { get; set; } = new();
+
+    private bool IsBusy = false;
+    private bool IsFinishModalVisible = false;
+    private float ComputedGrade = 0f;
+    private string? ModalMessage;
+
+    private bool AlreadyTaken = false;
+    private StdExam TakenResult = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        IsAuthenticated = false;
+
+        var auth = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = auth.User;
+        if (user?.Identity is null || !user.Identity.IsAuthenticated)
+            return;
+
+        IsAuthenticated = true;
+        var idClaim = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(idClaim, out var userId))
+            return;
+
+        UserId = userId;
+
+        Exam = await DbContext.Exams
+            .Include(e => e.Course)
+                .ThenInclude(c => c.Instructor)
+            .Include(e => e.StdExams)
+            .FirstOrDefaultAsync(e => e.Id == ExamId);
+
+        if (Exam == null) return;
+
+        Questions = await DbContext.Quetsions
+            .Where(q => q.ExamId == ExamId)
+            .Include(q => q.Answers)
+            .OrderBy(q => q.Id)
+            .ToListAsync();
+
+        foreach (var q in Questions)
+        {
+            SelectedAnswers[q.Id] = null;
+            q.Answers = q.Answers.OrderBy(a => a.AnsLetter).ToList();
+        }
+
+        var std = Exam.StdExams.FirstOrDefault(s => s.StdId == UserId);
+        if (std != null)
+        {
+            AlreadyTaken = true;
+            TakenResult = std;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+             await JS.InvokeVoidAsync("eval", @"
+                history.replaceState(null, '', window.location.href);
+                history.pushState(null, '', window.location.href);
+                window.addEventListener('popstate', function() {
+                    history.pushState(null, '', window.location.href);
+                });
+            ");
+        }
+    }
+
+    private string GetInstructorName(ApplicationUser? user)
+    {
+        if (user == null) return "Unknown";
+        var name = string.IsNullOrWhiteSpace(user.FName) && string.IsNullOrWhiteSpace(user.LName)
+            ? user.UserName
+            : ($"{user.FName} {user.LName}").Trim();
+        return string.IsNullOrWhiteSpace(name) ? "Unknown" : name.Split('@').ElementAt(0);
+    }
+
+    private void OnRadioChanged(Guid questionId, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            SelectedAnswers[questionId] = null;
+            return;
+        }
+        if (Enum.TryParse<AnsLettersEnum>(value, out var parsed))
+            SelectedAnswers[questionId] = parsed;
+        else
+            SelectedAnswers[questionId] = null;
+    }
+
+    private AnsLettersEnum? GetSelected(Guid questionId)
+    {
+        if (SelectedAnswers.TryGetValue(questionId, out var v)) return v;
+        return null;
+    }
+
+    private void ShowFinishModal()
+    {
+       
+        ModalMessage = null;
+        IsFinishModalVisible = true;
+    }
+
+    private void CloseFinishModal()
+    {
+        IsFinishModalVisible = false;
+    }
+
+
+    private async Task ConfirmSubmit()
+    {
+        if (Exam == null || AlreadyTaken) return;
+
+        IsBusy = true;
+        ModalMessage = null;
+
+        try
+        {
+             var total = Questions.Count;
+        if (total == 0)
+        {
+            ComputedGrade = 0f;
+        }
+        else
+        {
+            var correct = 0;
+            foreach (var q in Questions)
+            {
+                if (SelectedAnswers.TryGetValue(q.Id, out var sel) && sel.HasValue)
+                    if (sel.Value == q.ModelAns) correct++;
+            }
+            ComputedGrade = (float)correct / total * 100f;
+        }
+
+            var stdExam = new StdExam
+            {
+                ExamId = Exam.Id,
+                StdId = UserId,
+                grade = ComputedGrade
+            };
+
+            await DbContext.AddAsync(stdExam);
+            await DbContext.SaveChangesAsync();
+
+
+            NavigationManager.NavigateTo("/studentArea");
+        }
+        catch (Exception ex)
+        {
+            ModalMessage = "Error saving result: " + ex.Message;
+            IsBusy = false;
+        }
+    }
+}

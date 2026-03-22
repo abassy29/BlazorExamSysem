@@ -1,0 +1,272 @@
+﻿@page "/createExam"
+@using ExaminationSystem.Data.Models
+@using Microsoft.EntityFrameworkCore
+@using System.Security.Claims
+@inject ExaminationSystem.Data.ApplicationDbContext DbContext
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthStateProvider
+
+<style>
+    .ce-wrapper {
+        max-width: 520px;
+        margin: 3rem auto;
+        padding: 0 1rem;
+        font-family: 'Segoe UI', sans-serif;
+    }
+
+    .ce-header {
+        margin-bottom: 2rem;
+        border-left: 4px solid #4f46e5;
+        padding-left: 1rem;
+    }
+
+        .ce-header h3 {
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: #1e1b4b;
+            margin: 0 0 0.4rem;
+        }
+
+        .ce-header p {
+            color: #6b7280;
+            font-size: 0.9rem;
+            margin: 0;
+        }
+
+    .ce-card {
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 14px;
+        padding: 2rem;
+        box-shadow: 0 2px 12px rgba(79, 70, 229, 0.07);
+    }
+
+    .ce-label {
+        display: block;
+        font-size: 0.78rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #6b7280;
+        margin-bottom: 0.5rem;
+    }
+
+    .ce-select {
+        width: 100%;
+        border: 1px solid #d1d5db;
+        border-radius: 9px;
+        padding: 0.65rem 0.9rem;
+        font-size: 0.95rem;
+        color: #111827;
+        background: #f9fafb;
+        appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b7280' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 0.9rem center;
+        cursor: pointer;
+        transition: border-color 0.15s, box-shadow 0.15s;
+        box-sizing: border-box;
+    }
+
+        .ce-select:focus {
+            outline: none;
+            border-color: #4f46e5;
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+            background-color: #fff;
+        }
+
+    .ce-btn {
+        width: 100%;
+        margin-top: 1.25rem;
+        background: #4f46e5;
+        color: #fff;
+        border: none;
+        border-radius: 9px;
+        padding: 0.75rem;
+        font-size: 0.95rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.15s, transform 0.1s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+    }
+
+        .ce-btn:hover:not(:disabled) {
+            background: #4338ca;
+            transform: translateY(-1px);
+        }
+
+        .ce-btn:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+    .ce-spinner {
+        width: 15px;
+        height: 15px;
+        border: 2px solid rgba(255,255,255,0.4);
+        border-top-color: #fff;
+        border-radius: 50%;
+        animation: ce-spin 0.7s linear infinite;
+        display: inline-block;
+    }
+
+    @@keyframes ce-spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
+    .ce-message {
+        margin-top: 1rem;
+        padding: 0.65rem 1rem;
+        border-radius: 8px;
+        font-size: 0.875rem;
+        background: #eff6ff;
+        border: 1px solid #bfdbfe;
+        color: #1d4ed8;
+    }
+
+    .ce-alert-warn {
+        padding: 0.75rem 1rem;
+        border-radius: 10px;
+        background: #fffbeb;
+        border: 1px solid #fde68a;
+        color: #92400e;
+        font-size: 0.9rem;
+    }
+
+    .ce-alert-info {
+        padding: 0.75rem 1rem;
+        border-radius: 10px;
+        background: #f0f9ff;
+        border: 1px solid #bae6fd;
+        color: #0369a1;
+        font-size: 0.9rem;
+    }
+</style>
+
+<div class="ce-wrapper">
+    <div class="ce-header">
+        <h3>Create Exam</h3>
+        <p>Select one of your courses from the list and create an exam for it.</p>
+    </div>
+
+    @if (!IsAuthenticated)
+    {
+        <div class="ce-alert-warn">Please sign in to see your courses.</div>
+    }
+    else if (Courses == null || !Courses.Any())
+    {
+        <div class="ce-alert-info">You don't have any courses to create an exam for.</div>
+    }
+    else
+    {
+        <div class="ce-card">
+            <label class="ce-label">Your Courses</label>
+            <select class="ce-select" @bind="SelectedCourseId">
+                <option value="">— choose a course —</option>
+                @foreach (var c in Courses)
+                {
+                    <option value="@c.Id">@c.CourseName</option>
+                }
+            </select>
+
+            <button class="ce-btn" @onclick="CreateExamAsync" disabled="@(IsBusy || SelectedCourseId == Guid.Empty)">
+                @if (IsBusy)
+                {
+                    <span class="ce-spinner"></span>
+                    <span>Creating...</span>
+                }
+                else
+                {
+                    <span>Create Exam</span>
+                }
+            </button>
+
+            @if (!string.IsNullOrEmpty(Message))
+            {
+                <div class="ce-message">@Message</div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private bool IsBusy;
+    private string? Message;
+    private bool IsAuthenticated;
+    private List<Course> Courses { get; set; } = new();
+    private Guid SelectedCourseId { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        IsAuthenticated = false;
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user?.Identity is null || !user.Identity.IsAuthenticated)
+        {
+            IsAuthenticated = false;
+            return;
+        }
+
+        IsAuthenticated = true;
+        var idClaim = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(idClaim, out var userId))
+        {
+            Message = "Unable to determine user id.";
+            return;
+        }
+
+        bool isAdmin = user.IsInRole("Admin");
+
+        Courses = isAdmin
+            ? await DbContext.Courses.OrderBy(c => c.CourseName).ToListAsync()
+            : await DbContext.Courses
+                .Where(c => c.InstructorId == userId || c.Students.Any(s => s.Id == userId))
+                .OrderBy(c => c.CourseName)
+                .ToListAsync();
+
+        var preferred = Courses.FirstOrDefault(c => c.CourseName == "Asp .Net Core ");
+        if (preferred != null)
+            SelectedCourseId = preferred.Id;
+    }
+
+    private async Task CreateExamAsync()
+    {
+        if (SelectedCourseId == Guid.Empty)
+        {
+            Message = "Please select a course.";
+            return;
+        }
+
+        try
+        {
+            IsBusy = true;
+            Message = null;
+
+            var exam = new Exam()
+            {
+                Id = Guid.NewGuid(),
+                CourseId = SelectedCourseId
+            };
+
+            await DbContext.Exams.AddAsync(exam);
+            await DbContext.SaveChangesAsync();
+            Navigation.NavigateTo($"/createExamQuestions/{exam.Id}");
+        }
+        catch (Exception ex)
+        {
+            Message = "An error occurred while creating the exam: " + ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+            StateHasChanged();
+        }
+    }
+}
